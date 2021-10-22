@@ -65,8 +65,7 @@ struct crypt_cipher {
 
 void crypt_cipher_init(struct crypt_cipher **ctx,char *key)
 {
-  struct crypt_cipher *h;
-  h = malloc(sizeof(*h));
+  *ctx = malloc(sizeof(**ctx));
 
   struct sockaddr_alg sa = {
     .salg_family = AF_ALG,
@@ -74,12 +73,11 @@ void crypt_cipher_init(struct crypt_cipher **ctx,char *key)
     .salg_name = "cbc(aes)"
   };
 
-  h->tfmfd = socket(AF_ALG, SOCK_SEQPACKET, 0);
-  bind(h->tfmfd, (struct sockaddr *)&sa, sizeof(sa));
-  setsockopt(h->tfmfd, SOL_ALG, ALG_SET_KEY,key, 16);
-  h->opfd = accept(h->tfmfd, NULL, 0);
+  (*ctx)->tfmfd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+  bind((*ctx)->tfmfd, (struct sockaddr *)&sa, sizeof(sa));
+  setsockopt((*ctx)->tfmfd, SOL_ALG, ALG_SET_KEY,key, 16);
+  (*ctx)->opfd = accept((*ctx)->tfmfd, NULL, 0);
   
-  *ctx = h;
 }
 
 void crypt_cipher_destroy(struct crypt_cipher *ctx)
