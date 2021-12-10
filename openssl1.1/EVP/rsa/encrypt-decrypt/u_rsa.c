@@ -36,6 +36,8 @@ int generate_key_file(){
   }
   save_pem_file("prikey.pem", "pubkey.pem", rsa);
   
+  RSA_free(rsa);
+  BN_free(bne);
   return 0;
 }
 
