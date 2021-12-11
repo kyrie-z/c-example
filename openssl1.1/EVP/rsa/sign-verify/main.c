@@ -3,6 +3,7 @@
 #include <openssl/pem.h>
 #include <string.h>
 
+// Func: 读取PEM RSA公钥文件
 EVP_PKEY *read_pem_pubkey(const char *keyfile) {
   EVP_PKEY *pkey = EVP_PKEY_new();
   BIO *bf;
@@ -17,6 +18,7 @@ EVP_PKEY *read_pem_pubkey(const char *keyfile) {
   return pkey;
 }
 
+// Func: 读取PEM RSA私钥文件
 EVP_PKEY *read_pem_prikey(const char *keyfile) {
   EVP_PKEY *pkey = EVP_PKEY_new();
   BIO *bf;
@@ -32,6 +34,7 @@ EVP_PKEY *read_pem_prikey(const char *keyfile) {
   return pkey;
 }
 
+// Func: EVP私钥签名
 int EVP_digest_sign_it(const unsigned char *msg, EVP_PKEY *pkey,
                        unsigned char **sig_data, int *slen) {
 
@@ -76,6 +79,7 @@ err:
   return 1;
 }
 
+// Func: EVP公钥验证
 int EVP_digest_verify_it(const unsigned char *msg, EVP_PKEY *pubkey,
                          const unsigned char *sig) {
 
