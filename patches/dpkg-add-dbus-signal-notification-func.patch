@@ -1,0 +1,173 @@
+From a52dd84a3125435d6785c034199a5a42ccbfef2b Mon Sep 17 00:00:00 2001
+From: zhouzilong <zhouzilong@uniontech.com>
+Date: Wed, 22 Jun 2022 20:37:32 +0800
+Subject: [PATCH] add dbus signal notification func
+
+Change-Id: Id78a4ad57d75ee99cdb4fa02f9b259dec9d7108d
+---
+ configure.ac    |  2 ++
+ src/Makefile.am |  4 +++-
+ src/archives.c  |  6 ++++++
+ src/dbus.c      | 31 +++++++++++++++++++++++++++++++
+ src/dbus.h      | 14 ++++++++++++++
+ src/unpack.c    |  3 +++
+ 6 files changed, 59 insertions(+), 1 deletion(-)
+ create mode 100644 src/dbus.c
+ create mode 100644 src/dbus.h
+
+diff --git a/configure.ac b/configure.ac
+index 171a85e..1acab35 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -99,6 +99,8 @@ AS_IF([test "x$build_start_stop_daemon" = "xyes"], [
+   DPKG_LIB_KVM
+ ])
+ 
++PKG_CHECK_MODULES([SYSTEMD],[libsystemd])
++
+ # Checks for header files.
+ AC_HEADER_STDC
+ AC_CHECK_HEADERS([\
+diff --git a/src/Makefile.am b/src/Makefile.am
+index b1003f4..cd3a426 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -34,6 +34,7 @@ dpkg_SOURCES = \
+ 	errors.c \
+ 	file-match.c file-match.h \
+ 	filters.c filters.h \
++	dbus.c dbus.h \
+ 	force.c force.h \
+ 	help.c \
+ 	main.c main.h \
+@@ -51,7 +52,8 @@ dpkg_SOURCES = \
+ 
+ dpkg_LDADD = \
+ 	$(LDADD) \
+-	$(SELINUX_LIBS)
++	$(SELINUX_LIBS) \
++	$(SYSTEMD_LIBS)
+ 
+ dpkg_divert_SOURCES = \
+ 	divertcmd.c
+diff --git a/src/archives.c b/src/archives.c
+index f74bcee..a25f30d 100644
+--- a/src/archives.c
++++ b/src/archives.c
+@@ -61,6 +61,7 @@
+ #include "main.h"
+ #include "archives.h"
+ #include "filters.h"
++#include "dbus.h"
+ 
+ static inline void
+ fd_writeback_init(int fd)
+@@ -1167,6 +1168,8 @@ tar_deferred_extract(struct fsys_namenode_list *files, struct pkginfo *pkg)
+       ohshite(_("unable to install new version of '%.255s'"),
+               cfile->namenode->name);
+ 
++    dbus_send_signal_emit(fnamevb.buf,pkg->set->name);
++
+     cfile->namenode->flags &= ~FNNF_DEFERRED_RENAME;
+ 
+     /*
+@@ -1548,6 +1551,8 @@ archivefiles(const char *const *argv)
+   ensure_diversions();
+   ensure_statoverrides(STATDB_PARSE_NORMAL);
+ 
++  dbus_init();
++
+   for (i = 0; argp[i]; i++) {
+     if (setjmp(ejbuf)) {
+       pop_error_context(ehflag_bombout);
+@@ -1588,6 +1593,7 @@ archivefiles(const char *const *argv)
+ 
+   trigproc_run_deferred();
+   modstatdb_shutdown();
++  dbus_finish();
+ 
+   return 0;
+ }
+diff --git a/src/dbus.c b/src/dbus.c
+new file mode 100644
+index 0000000..6e17296
+--- /dev/null
++++ b/src/dbus.c
+@@ -0,0 +1,31 @@
++#include <systemd/sd-bus.h>
++#include <stdbool.h>
++
++
++#define BUS_PATH    "/org/desktopspec/Dpkg"
++#define BUS_IFC     "org.desktopspec.Dpkg"
++#define BUS_SIGNAL  "UnitFilesUpdated"
++
++static sd_bus *bus = NULL;
++static bool  bus_usable = false;
++
++void dbus_init(){
++  if (sd_bus_open_system(&bus) >= 0)
++    bus_usable = true;
++}
++
++void dbus_finish(){
++    sd_bus_unref(bus); 
++}
++
++void dbus_send_signal_emit(const char *filepath,const char *pkgname){
++    if (!bus_usable)
++        return;
++        
++    sd_bus_message *msg =NULL;
++    sd_bus_message_new_signal(bus,&msg,BUS_PATH,BUS_IFC,BUS_SIGNAL);
++    sd_bus_message_append_basic(msg,'s',pkgname);
++    sd_bus_message_append_basic(msg,'s',filepath);
++    sd_bus_send(bus,msg,NULL);
++    sd_bus_flush(bus);
++}
+\ No newline at end of file
+diff --git a/src/dbus.h b/src/dbus.h
+new file mode 100644
+index 0000000..54ec64f
+--- /dev/null
++++ b/src/dbus.h
+@@ -0,0 +1,14 @@
++#ifndef DPKG_DBUS_H
++#define DPKG_DBUS_H
++
++#include <dpkg/macros.h>
++
++DPKG_BEGIN_DECLS
++
++void dbus_init();
++void dbus_finish();
++void dbus_send_signal_emit(const char *filepath,const char *pkgname);
++
++DPKG_END_DECLS
++
++#endif
+\ No newline at end of file
+diff --git a/src/unpack.c b/src/unpack.c
+index ee453a8..f110281 100644
+--- a/src/unpack.c
++++ b/src/unpack.c
+@@ -58,6 +58,7 @@
+ #include "file-match.h"
+ #include "main.h"
+ #include "archives.h"
++#include "dbus.h"
+ 
+ static const char *
+ summarize_filename(const char *filename)
+@@ -535,6 +536,8 @@ pkg_infodb_update(struct pkginfo *pkg, char *cidir, char *cidirrest)
+       ohshite(_("unable to install new info file '%.250s' as '%.250s'"),
+               cidir, newinfofilename);
+ 
++    dbus_send_signal_emit(newinfofilename,pkg->set->name);
++
+     debug(dbg_scripts,
+           "process_archive tmp.ci script/file '%s' installed as '%s'",
+           cidir, newinfofilename);
+-- 
+2.20.1
+
